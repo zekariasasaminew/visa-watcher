@@ -1,0 +1,14 @@
+{
+  "name": "visa-watcher",
+  "version": "1.0.0",
+  "description": "Monitors US Embassy visa appointment page for earlier dates",
+  "main": "visa-watcher.js",
+  "scripts": {
+    "start": "node visa-watcher.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "nodemailer": "^6.9.13",
+    "playwright": "^1.44.0"
+  }
+}
