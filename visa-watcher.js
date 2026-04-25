@@ -12,8 +12,8 @@ const CONFIG = {
   appointmentUrl:
     "https://ais.usvisa-info.com/en-et/niv/schedule/73600576/appointment",
   facilityValue: "19", // Addis Ababa
-  targetBefore: new Date("2026-05-23"), // Graduation — we want anything earlier
-  pollIntervalMs: 5 * 60_000, // 5 minutes
+  targetBefore: new Date("2026-06-07"), // Graduation — we want anything earlier
+  pollIntervalMs: 100_000, // 100 seconds
   alertRecipient: "zekariassolomon1122@gmail.com",
   dryRun: process.env.DRY_RUN !== "false", // true by default
   singleRun: process.env.SINGLE_RUN === "true", // set by GitHub Actions
@@ -53,6 +53,10 @@ async function sendMail(mailer, { subject, text }) {
 }
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
+
+function ts() {
+  return new Date().toLocaleString("en-US", { hour12: false });
+}
 
 function formatDate(d) {
   return d.toLocaleDateString("en-US", {
@@ -281,7 +285,7 @@ async function bookAppointment(page, targetDate, mailer) {
 async function pollOnce(page, mailer) {
   await ensureLoggedIn(page);
 
-  console.log("\n[POLL] Navigating to appointment page…");
+  console.log(`\n[${ts()}] [POLL] Navigating to appointment page…`);
   await page.goto(CONFIG.appointmentUrl, {
     waitUntil: "domcontentloaded",
     timeout: 30_000,
@@ -352,7 +356,7 @@ async function pollOnce(page, mailer) {
 
   if (earlyDates.length === 0) {
     console.log(
-      `[POLL] No early dates found.\n` +
+      `[${ts()}] [POLL] No early dates found.\n` +
         `       Earliest available : ${earliestLabel}\n` +
         `       Available times    : ${timesLabel}\n` +
         `       Waiting ${CONFIG.pollIntervalMs / 1000}s…`,
@@ -416,7 +420,7 @@ async function pollOnce(page, mailer) {
 
   async function launchBrowser() {
     const browser = await chromium.launch({
-      headless: process.env.SINGLE_RUN === "true" || process.env.CI === "true",
+      headless: true,
       slowMo: 0,
     });
     const context = await browser.newContext({
@@ -433,31 +437,35 @@ async function pollOnce(page, mailer) {
   async function recoverWithRetry(reason) {
     let waitMs = 60_000;
     while (true) {
-      console.log(`[RECOVERY] ${reason} — waiting ${waitMs / 1000}s before retry...`);
-      try { await browser.close(); } catch {}
+      console.log(
+        `[${ts()}] [RECOVERY] ${reason} — waiting ${waitMs / 1000}s before retry...`,
+      );
+      try {
+        await browser.close();
+      } catch {}
       await new Promise((r) => setTimeout(r, waitMs));
       try {
         ({ browser, page } = await launchBrowser());
         await login(page);
-        console.log('[RECOVERY] Back online.');
+        console.log("[RECOVERY] Back online.");
         return;
       } catch (retryErr) {
-        console.error('[RECOVERY] Still blocked:', retryErr.message);
+        console.error("[RECOVERY] Still blocked:", retryErr.message);
         waitMs = Math.min(waitMs * 2, 10 * 60_000); // back off up to 10 min
       }
     }
   }
 
   await login(page).catch(async (e) => {
-    console.error('[AUTH] Initial login failed:', e.message);
-    await recoverWithRetry('Initial login blocked');
+    console.error("[AUTH] Initial login failed:", e.message);
+    await recoverWithRetry("Initial login blocked");
   });
 
   let pollCount = 0;
   while (true) {
     try {
       const done = await pollOnce(page, mailer);
-      if (done || CONFIG.singleRun) break;  // exit after one check in CI
+      if (done || CONFIG.singleRun) break; // exit after one check in CI
       pollCount++;
       if (pollCount % 9999 === 0) {
         await browser.close();
@@ -465,16 +473,16 @@ async function pollOnce(page, mailer) {
         await login(page);
       }
     } catch (pollErr) {
-      console.error('[POLL ERROR]', pollErr.message);
+      console.error("[POLL ERROR]", pollErr.message);
       const isNetworkBlock =
-        pollErr.message.includes('CONNECTION_REFUSED') ||
-        pollErr.message.includes('NETWORK_CHANGED');
+        pollErr.message.includes("CONNECTION_REFUSED") ||
+        pollErr.message.includes("NETWORK_CHANGED");
       const isBrowserDead =
-        pollErr.message.includes('closed') ||
-        pollErr.message.includes('EMPTY_RESPONSE') ||
-        pollErr.message.includes('ABORTED');
+        pollErr.message.includes("closed") ||
+        pollErr.message.includes("EMPTY_RESPONSE") ||
+        pollErr.message.includes("ABORTED");
       if (isNetworkBlock || isBrowserDead) {
-        await recoverWithRetry(isNetworkBlock ? 'IP blocked' : 'Browser died');
+        await recoverWithRetry(isNetworkBlock ? "IP blocked" : "Browser died");
         pollCount = 0;
         continue;
       }
@@ -483,5 +491,5 @@ async function pollOnce(page, mailer) {
   }
 
   await browser.close();
-  console.log('[EXIT] Done.');
+  console.log("[EXIT] Done.");
 })();
